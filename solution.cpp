@@ -20,7 +20,7 @@ int activeReadingCount = 0;
 std::vector<double> latestTemps(16, 0.0);       // Assuming size 16, adjust as needed
 std::vector<long long> latestTimestamps(16, 0); // Assuming size 16
 std::vector<long long> entryTimes(16, 0);       // Assuming size 16
-std::ofstream alertFile("alert_emerging.txt");
+std::ofstream alertFile("alert_logging.txt");
 MinMaxHeap minMaxHeap(allReadings, positions);
 
 // Function to process each reading
