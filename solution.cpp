@@ -1,80 +1,133 @@
 #include "solution.hpp"
-#include <iostream> // For cout, endl
-#include <string>   // For string, to_string
-#include <chrono>   // For duration_cast, milliseconds, system_clock
-#include <utility>  // For make_pair
+#include <iostream>
+#include <string>
+#include <chrono>
+#include <vector>
+#include <queue>
+#include <fstream>
+#include <utility>
 
 using namespace std;
 using namespace chrono;
 
-// Define global variables (without extern)
 std::vector<SensorReading> allReadings;
-std::vector<int> positions;
-std::priority_queue<
-    std::pair<long long, int>,
-    std::vector<std::pair<long long, int>>,
-    std::greater<std::pair<long long, int>>>
-    expirationHeap;
-double sum = 0.0;
-int activeReadingCount = 0;
-std::vector<double> latestTemps(16, 0.0);       // Assuming size 16, adjust as needed
-std::vector<long long> latestTimestamps(16, 0); // Assuming size 16
-std::vector<long long> entryTimes(16, 0);       // Assuming size 16
-std::ofstream alertFile("alert_logging.txt");
-MinMaxHeap minMaxHeap(allReadings, positions);
+std::vector<int> readingPositionsInHeap;
+std::priority_queue<std::pair<long long, int>, std::vector<std::pair<long long, int>>,
+                    std::greater<std::pair<long long, int>>>
+    expirationQueue;
+double activeTemperatureSum = 0.0;
+int activeReadingCounter = 0;
+const int MAX_SENSORS_PLUS_ONE = 16;
+std::vector<double> latestSensorTemperatures(MAX_SENSORS_PLUS_ONE, 0.0);
+std::vector<long long> latestSensorTimestamps(MAX_SENSORS_PLUS_ONE, 0);
+std::vector<long long> sensorEntryTimestamps(MAX_SENSORS_PLUS_ONE, 0);
+std::ofstream alertLogFile("alert_logging.txt");
+MinMaxHeap minMaxHeap(allReadings, readingPositionsInHeap);
 
-// Function to process each reading
+const long long READING_EXPIRATION_MS = 60000;
+const int ANOMALY_CHECK_K = 5;
+const double HIGH_TEMP_THRESHOLD = 48.0;
+const int MAX_SENSOR_ID = 15;
+const int MIN_SENSOR_ID = 1;
+
 void processReading(const SensorReading &reading)
 {
-    long long now = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    long long currentTimeMs = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 
-    // Remove expired readings
-    while (!expirationHeap.empty() && expirationHeap.top().first <= now)
+    while (!expirationQueue.empty() && expirationQueue.top().first <= currentTimeMs)
     {
-        auto [expTime, idx] = expirationHeap.top();
-        expirationHeap.pop();
-        if (positions[idx] != -1)
+        int expiredReadingIndex = expirationQueue.top().second;
+        expirationQueue.pop();
+
+        if (expiredReadingIndex < readingPositionsInHeap.size() && readingPositionsInHeap[expiredReadingIndex] != -1)
         {
-            minMaxHeap.deleteAtIndex(positions[idx]);
-            sum -= allReadings[idx].temperature;
-            activeReadingCount--;
+            int heapIndexToRemove = readingPositionsInHeap[expiredReadingIndex];
+            double expiredTemp = allReadings[expiredReadingIndex].temperature;
+            minMaxHeap.deleteElementAtHeapIndex(heapIndexToRemove);
+            activeTemperatureSum -= expiredTemp;
+            activeReadingCounter--;
         }
     }
 
-    // Add new reading
     allReadings.push_back(reading);
-    int idx = allReadings.size() - 1;
-    positions.push_back(-1);
-    minMaxHeap.insert(idx);
-    expirationHeap.push(make_pair(reading.timestamp + 60000, idx));
-    sum += reading.temperature;
-    activeReadingCount++;
+    int newReadingIndex = allReadings.size() - 1;
 
-    // Update latest temps
-    int sensorID = reading.sensorID;
-    latestTemps[sensorID] = reading.temperature;
-    latestTimestamps[sensorID] = reading.timestamp;
-
-    // Check for anomalies
-    int k = 5; // Assume k=5
-    vector<int> topKMax = minMaxHeap.getTopKMax(k);
-    vector<int> bottomKMin = minMaxHeap.getTopKMin(k);
-    double average = (activeReadingCount > 0) ? sum / activeReadingCount : 0.0;
-
-    // Isolated anomalies
-    for (int maxIdx : topKMax)
+    if (newReadingIndex >= readingPositionsInHeap.size())
     {
-        SensorReading &r = allReadings[maxIdx];
-        if (r.temperature > 48.0)
+        readingPositionsInHeap.resize(newReadingIndex + 1, -1);
+    }
+    readingPositionsInHeap[newReadingIndex] = -1;
+
+    minMaxHeap.insertReadingIndex(newReadingIndex);
+
+    long long expirationTime = reading.timestamp + READING_EXPIRATION_MS;
+    expirationQueue.push(make_pair(expirationTime, newReadingIndex));
+
+    activeTemperatureSum += reading.temperature;
+    activeReadingCounter++;
+
+    int sensorID = reading.sensorID;
+    if (sensorID >= MIN_SENSOR_ID && sensorID <= MAX_SENSOR_ID)
+    {
+        latestSensorTemperatures[sensorID] = reading.temperature;
+        latestSensorTimestamps[sensorID] = reading.timestamp;
+    }
+    else if (sensorID >= 0 && sensorID < MAX_SENSORS_PLUS_ONE)
+    {
+        latestSensorTemperatures[sensorID] = reading.temperature;
+        latestSensorTimestamps[sensorID] = reading.timestamp;
+    }
+    else
+    {
+        cerr << "Warning: Sensor ID " << sensorID << " is out of expected range [0-" << MAX_SENSORS_PLUS_ONE - 1 << "]." << endl;
+    }
+
+    if (minMaxHeap.size() < ANOMALY_CHECK_K)
+    {
+        return;
+    }
+
+    vector<int> hottestKIndices = minMaxHeap.getTopKMaxIndices(ANOMALY_CHECK_K);
+
+    for (const int &hotReadingIndex : hottestKIndices)
+    {
+        const SensorReading &hotReading = allReadings[hotReadingIndex];
+
+        if (hotReading.temperature > HIGH_TEMP_THRESHOLD)
         {
-            int sid = r.sensorID;
-            bool neighbor1_normal = (sid - 1 >= 1) ? (latestTemps[sid - 1] <= 48.0) : true;
-            bool neighbor2_normal = (sid + 1 <= 15) ? (latestTemps[sid + 1] <= 48.0) : true;
-            if (neighbor1_normal && neighbor2_normal)
+            int hotSensorID = hotReading.sensorID;
+
+            bool leftNeighborNormal = true;
+            if (hotSensorID > MIN_SENSOR_ID)
             {
-                string log = "[ALERT] Time: " + to_string(now) + " | Sensor: " + to_string(sid) + " | Type: Isolated High Spike | Temp: " + to_string(r.temperature) + " C [Note] Neighboring sensors are normal.";
-                cout << log << endl;
-                alertFile << log << endl;
+                if (hotSensorID - 1 < latestSensorTemperatures.size())
+                {
+                    leftNeighborNormal = (latestSensorTemperatures[hotSensorID - 1] <= HIGH_TEMP_THRESHOLD);
+                }
+            }
+
+            bool rightNeighborNormal = true;
+            if (hotSensorID < MAX_SENSOR_ID)
+            {
+                if (hotSensorID + 1 < latestSensorTemperatures.size())
+                {
+                    rightNeighborNormal = (latestSensorTemperatures[hotSensorID + 1] <= HIGH_TEMP_THRESHOLD);
+                }
+            }
+
+            if (leftNeighborNormal && rightNeighborNormal)
+            {
+                string logMessage = "[ALERT] Time: " + to_string(currentTimeMs) +
+                                    " | Sensor: " + to_string(hotSensorID) +
+                                    " | Type: Isolated High Spike" +
+                                    " | Temp: " + to_string(hotReading.temperature) + " C" +
+                                    " [Note] Neighboring sensors are normal.";
+
+                cout << logMessage << endl;
+                if (alertLogFile.is_open())
+                {
+                    alertLogFile << logMessage << endl;
+                }
             }
         }
     }

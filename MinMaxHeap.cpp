@@ -1,222 +1,391 @@
 #include "MinMaxHeap.hpp"
 #include <algorithm>
+#include <stdexcept>
+#include <cmath>
+#include <limits>
 
-MinMaxHeap::MinMaxHeap(const std::vector<SensorReading> &r, std::vector<int> &p)
-    : allReadings(r), positions(p) {}
+MinMaxHeap::MinMaxHeap(const std::vector<SensorReading> &readingsRef, std::vector<int> &positionsRef)
+    : allReadingsData(readingsRef), readingPositions(positionsRef) {}
 
-void MinMaxHeap::swap(int i, int j)
+void MinMaxHeap::swapHeapNodes(int index1, int index2)
 {
-    int a = heap[i];
-    int b = heap[j];
-    heap[i] = b;
-    heap[j] = a;
-    positions[a] = j;
-    positions[b] = i;
+    int readingIndex1 = heapIndices[index1];
+    int readingIndex2 = heapIndices[index2];
+    std::swap(heapIndices[index1], heapIndices[index2]);
+    readingPositions[readingIndex1] = index2;
+    readingPositions[readingIndex2] = index1;
 }
 
-bool MinMaxHeap::isMinLevel(int index)
+bool MinMaxHeap::isMinLevel(int nodeIndex)
 {
-    int level = 0;
-    while (index > 0)
-    {
-        index = (index - 1) / 2;
-        level++;
-    }
+    if (nodeIndex < 0)
+        return false;
+    if (nodeIndex == 0)
+        return true;
+    int level = static_cast<int>(std::floor(std::log2(nodeIndex + 1)));
     return (level % 2 == 0);
 }
 
-void MinMaxHeap::bubbleUp(int index)
+void MinMaxHeap::bubbleUp(int startIndex)
 {
-    if (index == 0)
-        return;
-    int parent = (index - 1) / 2;
-    if (isMinLevel(index))
+    int currentIndex = startIndex;
+    if (currentIndex == 0)
     {
-        if (allReadings[heap[index]].temperature < allReadings[heap[parent]].temperature)
+        return;
+    }
+
+    int parentIndex = (currentIndex - 1) / 2;
+
+    if (isMinLevel(currentIndex))
+    {
+        if (allReadingsData[heapIndices[currentIndex]].temperature > allReadingsData[heapIndices[parentIndex]].temperature)
         {
-            swap(index, parent);
-            bubbleUp(parent);
+            swapHeapNodes(currentIndex, parentIndex);
+            bubbleUp(parentIndex);
         }
-        else if (parent > 0)
+        else
         {
-            int grandparent = (parent - 1) / 2;
-            if (allReadings[heap[index]].temperature > allReadings[heap[grandparent]].temperature)
+            int grandparentIndex = (parentIndex - 1) / 2;
+            if (parentIndex > 0 && allReadingsData[heapIndices[currentIndex]].temperature < allReadingsData[heapIndices[grandparentIndex]].temperature)
             {
-                swap(index, grandparent);
-                bubbleUp(grandparent);
+                swapHeapNodes(currentIndex, grandparentIndex);
+                bubbleUp(grandparentIndex);
             }
         }
     }
     else
     {
-        if (allReadings[heap[index]].temperature > allReadings[heap[parent]].temperature)
+        if (allReadingsData[heapIndices[currentIndex]].temperature < allReadingsData[heapIndices[parentIndex]].temperature)
         {
-            swap(index, parent);
-            bubbleUp(parent);
+            swapHeapNodes(currentIndex, parentIndex);
+            bubbleUp(parentIndex);
         }
-        else if (parent > 0)
+        else
         {
-            int grandparent = (parent - 1) / 2;
-            if (allReadings[heap[index]].temperature < allReadings[heap[grandparent]].temperature)
+            int grandparentIndex = (parentIndex - 1) / 2;
+            if (parentIndex > 0 && allReadingsData[heapIndices[currentIndex]].temperature > allReadingsData[heapIndices[grandparentIndex]].temperature)
             {
-                swap(index, grandparent);
-                bubbleUp(grandparent);
+                swapHeapNodes(currentIndex, grandparentIndex);
+                bubbleUp(grandparentIndex);
             }
         }
     }
 }
 
-void MinMaxHeap::bubbleDown(int index)
+int MinMaxHeap::findMinDescendantIndex(int nodeIndex)
 {
-    if (isMinLevel(index))
+    int minDescendantIndex = -1;
+    double minDescendantTemp = std::numeric_limits<double>::max();
+    int currentHeapSize = heapIndices.size();
+
+    int leftChildIndex = 2 * nodeIndex + 1;
+    int rightChildIndex = 2 * nodeIndex + 2;
+
+    if (leftChildIndex < currentHeapSize)
     {
-        int left = 2 * index + 1;
-        int right = 2 * index + 2;
-        if (left >= heap.size())
-            return;
-        int smallest = left;
-        if (right < heap.size() && allReadings[heap[right]].temperature < allReadings[heap[smallest]].temperature)
+        minDescendantTemp = allReadingsData[heapIndices[leftChildIndex]].temperature;
+        minDescendantIndex = leftChildIndex;
+    }
+    if (rightChildIndex < currentHeapSize && allReadingsData[heapIndices[rightChildIndex]].temperature < minDescendantTemp)
+    {
+        minDescendantTemp = allReadingsData[heapIndices[rightChildIndex]].temperature;
+        minDescendantIndex = rightChildIndex;
+    }
+
+    for (int i = 0; i < 4; ++i)
+    {
+        int grandChildIndex = 4 * nodeIndex + 3 + i;
+        if (grandChildIndex < currentHeapSize && allReadingsData[heapIndices[grandChildIndex]].temperature < minDescendantTemp)
         {
-            smallest = right;
+            minDescendantTemp = allReadingsData[heapIndices[grandChildIndex]].temperature;
+            minDescendantIndex = grandChildIndex;
         }
-        for (int gc = 4 * index + 3; gc <= 4 * index + 6 && gc < heap.size(); gc++)
+    }
+
+    return minDescendantIndex;
+}
+
+int MinMaxHeap::findMaxDescendantIndex(int nodeIndex)
+{
+    int maxDescendantIndex = -1;
+    double maxDescendantTemp = -std::numeric_limits<double>::max();
+    int currentHeapSize = heapIndices.size();
+
+    int leftChildIndex = 2 * nodeIndex + 1;
+    int rightChildIndex = 2 * nodeIndex + 2;
+
+    if (leftChildIndex < currentHeapSize)
+    {
+        maxDescendantTemp = allReadingsData[heapIndices[leftChildIndex]].temperature;
+        maxDescendantIndex = leftChildIndex;
+    }
+    if (rightChildIndex < currentHeapSize && allReadingsData[heapIndices[rightChildIndex]].temperature > maxDescendantTemp)
+    {
+        maxDescendantTemp = allReadingsData[heapIndices[rightChildIndex]].temperature;
+        maxDescendantIndex = rightChildIndex;
+    }
+
+    for (int i = 0; i < 4; ++i)
+    {
+        int grandChildIndex = 4 * nodeIndex + 3 + i;
+        if (grandChildIndex < currentHeapSize && allReadingsData[heapIndices[grandChildIndex]].temperature > maxDescendantTemp)
         {
-            if (allReadings[heap[gc]].temperature < allReadings[heap[smallest]].temperature)
-            {
-                smallest = gc;
-            }
+            maxDescendantTemp = allReadingsData[heapIndices[grandChildIndex]].temperature;
+            maxDescendantIndex = grandChildIndex;
         }
-        if (allReadings[heap[smallest]].temperature < allReadings[heap[index]].temperature)
-        {
-            swap(index, smallest);
-            int parent_of_smallest = (smallest - 1) / 2;
-            if (parent_of_smallest != index && allReadings[heap[smallest]].temperature < allReadings[heap[parent_of_smallest]].temperature)
-            {
-                swap(smallest, parent_of_smallest);
-            }
-            bubbleDown(smallest);
-        }
+    }
+    return maxDescendantIndex;
+}
+
+void MinMaxHeap::bubbleDown(int startIndex)
+{
+    if (isMinLevel(startIndex))
+    {
+        bubbleDownMin(startIndex);
     }
     else
     {
-        int left = 2 * index + 1;
-        int right = 2 * index + 2;
-        if (left >= heap.size())
-            return;
-        int largest = left;
-        if (right < heap.size() && allReadings[heap[right]].temperature > allReadings[heap[largest]].temperature)
-        {
-            largest = right;
-        }
-        for (int gc = 4 * index + 3; gc <= 4 * index + 6 && gc < heap.size(); gc++)
-        {
-            if (allReadings[heap[gc]].temperature > allReadings[heap[largest]].temperature)
-            {
-                largest = gc;
-            }
-        }
-        if (allReadings[heap[largest]].temperature > allReadings[heap[index]].temperature)
-        {
-            swap(index, largest);
-            int parent_of_largest = (largest - 1) / 2;
-            if (parent_of_largest != index && allReadings[heap[largest]].temperature > allReadings[heap[parent_of_largest]].temperature)
-            {
-                swap(largest, parent_of_largest);
-            }
-            bubbleDown(largest);
-        }
+        bubbleDownMax(startIndex);
     }
 }
 
-void MinMaxHeap::insert(int idx)
+void MinMaxHeap::bubbleDownMin(int nodeIndex)
 {
-    heap.push_back(idx);
-    positions[idx] = heap.size() - 1;
-    bubbleUp(heap.size() - 1);
-}
-
-int MinMaxHeap::findMin()
-{
-    if (heap.empty())
-        return -1;
-    return heap[0];
-}
-
-int MinMaxHeap::findMax()
-{
-    if (heap.empty())
-        return -1;
-    if (heap.size() == 1)
-        return heap[0];
-    if (heap.size() == 2)
-        return heap[1];
-    return (allReadings[heap[1]].temperature > allReadings[heap[2]].temperature) ? heap[1] : heap[2];
-}
-
-void MinMaxHeap::deleteMin()
-{
-    deleteAtIndex(0);
-}
-
-void MinMaxHeap::deleteMax()
-{
-    if (heap.size() <= 1)
+    int currentHeapSize = heapIndices.size();
+    if (2 * nodeIndex + 1 >= currentHeapSize)
     {
-        deleteAtIndex(0);
         return;
     }
-    int maxIndex = (heap.size() > 2 && allReadings[heap[2]].temperature > allReadings[heap[1]].temperature) ? 2 : 1;
-    deleteAtIndex(maxIndex);
+
+    int minDescendantIndex = findMinDescendantIndex(nodeIndex);
+
+    if (minDescendantIndex != -1)
+    {
+        int parentOfMinDescendant = (minDescendantIndex - 1) / 2;
+        bool isGrandchild = parentOfMinDescendant != nodeIndex;
+
+        if (isGrandchild)
+        {
+            if (allReadingsData[heapIndices[minDescendantIndex]].temperature < allReadingsData[heapIndices[nodeIndex]].temperature)
+            {
+                swapHeapNodes(nodeIndex, minDescendantIndex);
+                if (allReadingsData[heapIndices[minDescendantIndex]].temperature > allReadingsData[heapIndices[parentOfMinDescendant]].temperature)
+                {
+                    swapHeapNodes(minDescendantIndex, parentOfMinDescendant);
+                }
+                bubbleDownMin(minDescendantIndex);
+            }
+        }
+        else
+        {
+            if (allReadingsData[heapIndices[minDescendantIndex]].temperature < allReadingsData[heapIndices[nodeIndex]].temperature)
+            {
+                swapHeapNodes(nodeIndex, minDescendantIndex);
+                bubbleDownMin(minDescendantIndex);
+            }
+        }
+    }
 }
 
-void MinMaxHeap::deleteAtIndex(int heapIndex)
+void MinMaxHeap::bubbleDownMax(int nodeIndex)
 {
-    if (heapIndex >= heap.size())
+    int currentHeapSize = heapIndices.size();
+    if (2 * nodeIndex + 1 >= currentHeapSize)
+    {
         return;
-    int last = heap.size() - 1;
-    swap(heapIndex, last);
-    int removed_idx = heap[last];
-    heap.pop_back();
-    positions[removed_idx] = -1;
-    if (heapIndex < heap.size())
+    }
+
+    int maxDescendantIndex = findMaxDescendantIndex(nodeIndex);
+
+    if (maxDescendantIndex != -1)
+    {
+        int parentOfMaxDescendant = (maxDescendantIndex - 1) / 2;
+        bool isGrandchild = parentOfMaxDescendant != nodeIndex;
+
+        if (isGrandchild)
+        {
+            if (allReadingsData[heapIndices[maxDescendantIndex]].temperature > allReadingsData[heapIndices[nodeIndex]].temperature)
+            {
+                swapHeapNodes(nodeIndex, maxDescendantIndex);
+                if (allReadingsData[heapIndices[maxDescendantIndex]].temperature < allReadingsData[heapIndices[parentOfMaxDescendant]].temperature)
+                {
+                    swapHeapNodes(maxDescendantIndex, parentOfMaxDescendant);
+                }
+                bubbleDownMax(maxDescendantIndex);
+            }
+        }
+        else
+        {
+            if (allReadingsData[heapIndices[maxDescendantIndex]].temperature > allReadingsData[heapIndices[nodeIndex]].temperature)
+            {
+                swapHeapNodes(nodeIndex, maxDescendantIndex);
+                bubbleDownMax(maxDescendantIndex);
+            }
+        }
+    }
+}
+
+void MinMaxHeap::insertReadingIndex(int readingIndex)
+{
+    if (readingIndex >= readingPositions.size())
+    {
+        throw std::out_of_range("readingIndex out of bounds for readingPositions vector during insert");
+    }
+    if (readingPositions[readingIndex] != -1)
+    {
+        std::cerr << "Warning: Attempting to insert reading index " << readingIndex << " which is already in the heap." << std::endl;
+        return;
+    }
+
+    heapIndices.push_back(readingIndex);
+    int newHeapIndex = heapIndices.size() - 1;
+    readingPositions[readingIndex] = newHeapIndex;
+    bubbleUp(newHeapIndex);
+}
+
+int MinMaxHeap::findMinReadingIndex()
+{
+    if (heapIndices.empty())
+    {
+        return -1;
+    }
+    return heapIndices[0];
+}
+
+int MinMaxHeap::findMaxReadingIndex()
+{
+    if (heapIndices.empty())
+    {
+        return -1;
+    }
+    if (heapIndices.size() == 1)
+    {
+        return heapIndices[0];
+    }
+    int index1 = 1;
+    int index2 = 2;
+    int maxIndex = index1;
+
+    if (index2 < heapIndices.size() &&
+        allReadingsData[heapIndices[index2]].temperature > allReadingsData[heapIndices[index1]].temperature)
+    {
+        maxIndex = index2;
+    }
+    return heapIndices[maxIndex];
+}
+
+void MinMaxHeap::deleteMinReading()
+{
+    if (!heapIndices.empty())
+    {
+        deleteElementAtHeapIndex(0);
+    }
+}
+
+void MinMaxHeap::deleteMaxReading()
+{
+    if (heapIndices.empty())
+    {
+        return;
+    }
+    if (heapIndices.size() == 1)
+    {
+        deleteElementAtHeapIndex(0);
+        return;
+    }
+
+    int index1 = 1;
+    int index2 = 2;
+    int maxHeapIndex = index1;
+
+    if (index2 < heapIndices.size() &&
+        allReadingsData[heapIndices[index2]].temperature > allReadingsData[heapIndices[index1]].temperature)
+    {
+        maxHeapIndex = index2;
+    }
+
+    deleteElementAtHeapIndex(maxHeapIndex);
+}
+
+void MinMaxHeap::deleteElementAtHeapIndex(int heapIndex)
+{
+    if (heapIndex < 0 || heapIndex >= heapIndices.size())
+    {
+        return;
+    }
+
+    int lastIndex = heapIndices.size() - 1;
+    int readingIndexToRemove = heapIndices[heapIndex];
+
+    swapHeapNodes(heapIndex, lastIndex);
+    heapIndices.pop_back();
+    readingPositions[readingIndexToRemove] = -1;
+
+    if (heapIndex >= heapIndices.size())
+    {
+        return;
+    }
+
+    int movedElementReadingIndex = heapIndices[heapIndex];
+    bubbleDown(heapIndex);
+    if (readingPositions[movedElementReadingIndex] == heapIndex)
     {
         bubbleUp(heapIndex);
-        bubbleDown(heapIndex);
     }
 }
 
-std::vector<int> MinMaxHeap::getTopKMin(int k)
+void restoreHeap(MinMaxHeap &heap, const std::vector<int> &removedIndices)
 {
-    std::vector<int> result;
-    std::vector<int> temp;
-    for (int i = 0; i < k && !heap.empty(); i++)
+    for (int readingIndex : removedIndices)
     {
-        int minIdx = findMin();
-        result.push_back(minIdx);
-        temp.push_back(minIdx);
-        deleteMin();
+        heap.insertReadingIndex(readingIndex);
     }
-    for (int idx : temp)
-    {
-        insert(idx);
-    }
-    return result;
 }
 
-std::vector<int> MinMaxHeap::getTopKMax(int k)
+std::vector<int> MinMaxHeap::getTopKMinIndices(int k)
 {
-    std::vector<int> result;
-    std::vector<int> temp;
-    for (int i = 0; i < k && !heap.empty(); i++)
+    std::vector<int> resultIndices;
+    std::vector<int> temporarilyRemovedIndices;
+    int count = 0;
+
+    while (count < k && !heapIndices.empty())
     {
-        int maxIdx = findMax();
-        result.push_back(maxIdx);
-        temp.push_back(maxIdx);
-        deleteMax();
+        int minReadingIndex = findMinReadingIndex();
+        resultIndices.push_back(minReadingIndex);
+        temporarilyRemovedIndices.push_back(minReadingIndex);
+        deleteMinReading();
+        count++;
     }
-    for (int idx : temp)
+
+    restoreHeap(*this, temporarilyRemovedIndices);
+    return resultIndices;
+}
+
+std::vector<int> MinMaxHeap::getTopKMaxIndices(int k)
+{
+    std::vector<int> resultIndices;
+    std::vector<int> temporarilyRemovedIndices;
+    int count = 0;
+
+    while (count < k && !heapIndices.empty())
     {
-        insert(idx);
+        int maxReadingIndex = findMaxReadingIndex();
+        resultIndices.push_back(maxReadingIndex);
+        temporarilyRemovedIndices.push_back(maxReadingIndex);
+        deleteMaxReading();
+        count++;
     }
-    return result;
+
+    restoreHeap(*this, temporarilyRemovedIndices);
+    return resultIndices;
+}
+
+bool MinMaxHeap::isEmpty() const
+{
+    return heapIndices.empty();
+}
+
+size_t MinMaxHeap::size() const
+{
+    return heapIndices.size();
 }

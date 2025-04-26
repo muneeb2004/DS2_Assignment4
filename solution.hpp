@@ -4,26 +4,32 @@
 #include <vector>
 #include <queue>
 #include <fstream>
-#include "SensorReading.hpp" // For SensorReading
-#include "MinMaxHeap.hpp"    // For MinMaxHeap
+#include <utility>
+#include "SensorReading.hpp"
+#include "MinMaxHeap.hpp"
 
-// Declare global variables with extern
 extern std::vector<SensorReading> allReadings;
-extern std::vector<int> positions;
+extern std::vector<int> readingPositionsInHeap;
 extern std::priority_queue<
     std::pair<long long, int>,
     std::vector<std::pair<long long, int>>,
     std::greater<std::pair<long long, int>>>
-    expirationHeap;
-extern double sum;
-extern int activeReadingCount;
-extern std::vector<double> latestTemps;
-extern std::vector<long long> latestTimestamps;
-extern std::vector<long long> entryTimes;
-extern std::ofstream alertFile;
+    expirationQueue;
+extern double activeTemperatureSum;
+extern int activeReadingCounter;
+extern std::vector<double> latestSensorTemperatures;
+extern std::vector<long long> latestSensorTimestamps;
+extern std::vector<long long> sensorEntryTimestamps;
+extern std::ofstream alertLogFile;
 extern MinMaxHeap minMaxHeap;
 
-// Declare the function
+extern const int MAX_SENSORS_PLUS_ONE;
+extern const long long READING_EXPIRATION_MS;
+extern const int ANOMALY_CHECK_K;
+extern const double HIGH_TEMP_THRESHOLD;
+extern const int MAX_SENSOR_ID;
+extern const int MIN_SENSOR_ID;
+
 void processReading(const SensorReading &reading);
 
-#endif // SOLUTION_HPP
+#endif

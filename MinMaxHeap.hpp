@@ -7,25 +7,31 @@
 class MinMaxHeap
 {
 private:
-    std::vector<int> heap;                         // Indices into allReadings
-    std::vector<int> &positions;                   // Reference to external positions vector
-    const std::vector<SensorReading> &allReadings; // Reference to external readings vector
+    std::vector<int> heapIndices;
+    std::vector<int> &readingPositions;
+    const std::vector<SensorReading> &allReadingsData;
 
-    void swap(int i, int j);
-    bool isMinLevel(int index);
-    void bubbleUp(int index);
-    void bubbleDown(int index);
+    void swapHeapNodes(int index1, int index2);
+    bool isMinLevel(int nodeIndex);
+    void bubbleUp(int startIndex);
+    void bubbleDown(int startIndex);
+    void bubbleDownMin(int nodeIndex);
+    void bubbleDownMax(int nodeIndex);
+    int findMinDescendantIndex(int nodeIndex);
+    int findMaxDescendantIndex(int nodeIndex);
 
 public:
-    MinMaxHeap(const std::vector<SensorReading> &r, std::vector<int> &p);
-    void insert(int idx);
-    int findMin();
-    int findMax();
-    void deleteMin();
-    void deleteMax();
-    void deleteAtIndex(int heapIndex);
-    std::vector<int> getTopKMin(int k);
-    std::vector<int> getTopKMax(int k);
+    MinMaxHeap(const std::vector<SensorReading> &readingsRef, std::vector<int> &positionsRef);
+    void insertReadingIndex(int readingIndex);
+    int findMinReadingIndex();
+    int findMaxReadingIndex();
+    void deleteMinReading();
+    void deleteMaxReading();
+    void deleteElementAtHeapIndex(int heapIndex);
+    std::vector<int> getTopKMinIndices(int k);
+    std::vector<int> getTopKMaxIndices(int k);
+    bool isEmpty() const;
+    size_t size() const;
 };
 
 #endif
